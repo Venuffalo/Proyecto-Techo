@@ -1,6 +1,6 @@
-# Ejercicios de codigo de Teto
+# Teto’s Code Exercises
 
-Ejercicios de programacion reales, resueltos y probados automaticamente por Teto, mi asistente de IA personal. Cada archivo se genero con un modelo local (Ollama), se corrio de verdad en un sandbox aislado antes de guardarse, y algunos pasaron ademas por una segunda opinion de Claude Code.
+Real programming exercises, solved and automatically tested by Teto, my personal AI assistant. Each file was generated using a local model (Ollama) and actually executed within an isolated sandbox before being saved; some also underwent a secondary review by Claude Code.
 
 Ejercicios publicados: 2
 
