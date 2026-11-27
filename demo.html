@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teto — Live Coding Demo</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --text: #e7e9ee;
+    --muted: #9aa1ae;
+    --accent: #6ea8fe;
+    --ok: #4caf7d;
+    --err: #e06c6c;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px 64px;
+  }
+  main { width: 100%; max-width: 720px; }
+  h1 { font-size: 1.5rem; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-top: 0; margin-bottom: 24px; line-height: 1.5; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; }
+  textarea, input[type="password"], input[type="text"] {
+    width: 100%;
+    background: #0d0f13;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    resize: vertical;
+  }
+  textarea { min-height: 90px; }
+  .row { margin-bottom: 14px; }
+  button {
+    background: var(--accent);
+    color: #0b1220;
+    border: none;
+    border-radius: 8px;
+    padding: 11px 18px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.55; cursor: default; }
+  .status { margin-top: 16px; font-size: 0.9rem; min-height: 1.2em; }
+  .status.ok { color: var(--ok); }
+  .status.err { color: var(--err); }
+  .status.pending { color: var(--muted); }
+  pre {
+    background: #0d0f13;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .hint { color: var(--muted); font-size: 0.8rem; margin-top: 6px; }
+  .hidden { display: none; }
+  .server-missing {
+    border-color: var(--err);
+  }
+  footer { color: var(--muted); font-size: 0.78rem; text-align: center; margin-top: 28px; line-height: 1.6; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Teto — live coding demo</h1>
+  <p class="subtitle">
+    Teto is a personal AI assistant I built and have been running day to day.
+    This page talks directly to a small, separate demo server on my own
+    machine — it only exposes one thing: ask Teto to solve a short coding
+    exercise, and watch it write and actually run the code, live. You're
+    never shown Teto's own source code through this page; the question
+    you submit here is not saved or used to train anything.
+  </p>
+
+  <div class="panel">
+    <div class="row">
+      <label for="descripcion">Describe a small Python exercise</label>
+      <textarea id="descripcion" maxlength="500" placeholder="e.g. write a function that checks if a string is a palindrome"></textarea>
+    </div>
+    <div class="row">
+      <label for="clave">Passphrase (given to you separately)</label>
+      <input type="password" id="clave" autocomplete="off" placeholder="passphrase">
+    </div>
+    <div class="row hidden" id="fila_servidor">
+      <label for="servidor_manual">Demo server URL</label>
+      <input type="text" id="servidor_manual" placeholder="https://xxxx.trycloudflare.com">
+      <p class="hint">No server URL was given in the link you opened — paste the one you were given.</p>
+    </div>
+    <button id="btn_resolver">Ask Teto to solve it</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="panel hidden" id="panel_resultado">
+    <label id="label_resultado">Teto's code</label>
+    <pre id="codigo_resultado"></pre>
+  </div>
+
+  <footer>
+    This demo runs on my own computer rather than a cloud server, so it's
+    only reachable while I have it turned on — if it looks offline, it
+    probably just means I haven't started it for this conversation yet.
+    Message me and I'll bring it up, or try again in a bit.
+  </footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var params = new URLSearchParams(window.location.search);
+  var servidor = (params.get("servidor") || "").replace(/\/+$/, "");
+
+  var filaServidor = document.getElementById("fila_servidor");
+  var inputServidorManual = document.getElementById("servidor_manual");
+  if (!servidor) {
+    filaServidor.classList.remove("hidden");
+  }
+
+  function obtenerServidor() {
+    if (servidor) return servidor;
+    return (inputServidorManual.value || "").trim().replace(/\/+$/, "");
+  }
+
+  var textareaDescripcion = document.getElementById("descripcion");
+  var inputClave = document.getElementById("clave");
+  var botonResolver = document.getElementById("btn_resolver");
+  var statusEl = document.getElementById("status");
+  var panelResultado = document.getElementById("panel_resultado");
+  var labelResultado = document.getElementById("label_resultado");
+  var codigoResultado = document.getElementById("codigo_resultado");
+
+  function setStatus(texto, clase) {
+    statusEl.textContent = texto;
+    statusEl.className = "status" + (clase ? " " + clase : "");
+  }
+
+  botonResolver.addEventListener("click", function () {
+    var descripcion = textareaDescripcion.value.trim();
+    var clave = inputClave.value;
+    var servidorActual = obtenerServidor();
+
+    panelResultado.classList.add("hidden");
+    codigoResultado.textContent = "";
+
+    if (!servidorActual) {
+      setStatus("Missing demo server URL — paste the one you were given above.", "err");
+      return;
+    }
+    if (!descripcion) {
+      setStatus("Describe an exercise first.", "err");
+      return;
+    }
+    if (!clave) {
+      setStatus("Enter the passphrase you were given.", "err");
+      return;
+    }
+
+    botonResolver.disabled = true;
+    setStatus("Teto is working on it — this can take up to a minute or two...", "pending");
+
+    fetch(servidorActual + "/resolver", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ descripcion: descripcion, clave: clave })
+    })
+      .then(function (respuesta) {
+        return respuesta.json().then(function (datos) {
+          return { status: respuesta.status, datos: datos };
+        }).catch(function () {
+          return { status: respuesta.status, datos: null };
+        });
+      })
+      .then(function (resultado) {
+        botonResolver.disabled = false;
+        var datos = resultado.datos;
+
+        if (resultado.status === 200 && datos) {
+          panelResultado.classList.remove("hidden");
+          if (datos.exito) {
+            setStatus("Solved and verified by actually running it.", "ok");
+            labelResultado.textContent = "Teto's code (ran successfully)";
+          } else {
+            setStatus("Teto tried, but couldn't get it fully working this time.", "err");
+            labelResultado.textContent = "Teto's last attempt (did not pass)";
+          }
+          codigoResultado.textContent = datos.codigo || "(no code returned)";
+          return;
+        }
+
+        if (resultado.status === 403) {
+          setStatus("Wrong passphrase.", "err");
+        } else if (resultado.status === 429) {
+          setStatus("Too many requests from this connection right now — please try again a bit later.", "err");
+        } else if (resultado.status === 400) {
+          setStatus((datos && datos.error) || "Invalid request.", "err");
+        } else if (resultado.status === 500) {
+          setStatus((datos && datos.error) || "Something went wrong on the server side.", "err");
+        } else {
+          setStatus("Unexpected response (status " + resultado.status + ").", "err");
+        }
+      })
+      .catch(function () {
+        botonResolver.disabled = false;
+        setStatus("Couldn't reach the demo server. It's probably offline right now — message me and I'll turn it on.", "err");
+      });
+  });
+})();
+</script>
+</body>
+</html>
